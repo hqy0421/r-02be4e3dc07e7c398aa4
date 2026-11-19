@@ -1,0 +1,276 @@
+#' Get integer column positions
+#'
+#' Within the context of a selection function (`select`, `relocate`, `rename`), return the integer position of the
+#' columns selected.
+#'
+#' @details
+#' This function accepts
+#'
+#' * `integer()`s
+#' * `numeric()`s
+#' * `character()`s
+#' * `symbol()`s
+#' * `call()`s
+#'
+#' Each type is handled separately.
+#'
+#' @inheritParams select
+#' @param group_pos `logical(1)`. Should grouping variable positions be returned (default: `FALSE`)?
+#' @param .env `environment`. The environment in which non-column symbols and calls are evaluated, i.e. the
+#' environment of the user calling the verb.
+#'
+#' @return
+#' A vector of named positive `integer`s.
+#'
+#' @examples
+#' select_positions(mtcars, mpg)
+#' select_positions(mtcars, "mpg")
+#' select_positions(mtcars, starts_with("m"))
+#' select_positions(mtcars, -mpg)
+#' select_positions(mtcars, mpg:drat)
+#'
+#' @noRd
+select_positions <- function(.data, ..., .group_pos = FALSE, .env = parent.frame(2L), .values = NULL) {
+  cols <- dotdotdot(..., .env = .env)
+  cols <- cols[!vapply(cols, is.null, FALSE)]
+  if (length(cols) == 0L) return(integer(0))
+  select_env$setup(.data = .data, calling_frame = .env, values = .values)
+  on.exit(select_env$clean(), add = TRUE)
+  data_names <- select_env$get_colnames()
+  pos <- select_signed(unlist(lapply(cols, eval_expr)), cols[[1L]])
+  col_len <- select_env$get_ncol()
+  if (any(pos > col_len)) {
+    oor <- pos[which(pos > col_len)]
+    oor_len <- length(oor)
+    stop(
+      "Location", if (oor_len > 1) "s " else " ", collapse_to_sentence(oor),
+      if (oor_len > 1) " don't " else " doesn't ", "exist. There are only ", col_len, " columns."
+    )
+  }
+  if (isTRUE(.group_pos)) pos <- select_add_groups(pos, .data, cols)
+  if (length(data_names[pos]) != 0L) {
+    nm_pos <- names(pos)
+    if (any(nm_pos == "")) {
+      names(pos)[which(nm_pos == "")] <- data_names[pos[which(nm_pos == "")]]
+    }
+    if (is.null(nm_pos)) {
+      names(pos) <- data_names[abs(pos)]
+    }
+  }
+  uniques <- pos[!duplicated(pos)]
+  res_nms <- data_names[uniques]
+  res <- match(res_nms, data_names)
+  if (length(res) != 0L) {
+    res <- if (length(setdiff(names(uniques), data_names)) > 0L) {
+      if (all(uniques > 0L)) structure(res, names = names(uniques)) else structure(res, names = res_nms)
+    } else {
+      structure(res, names = res_nms)
+    }
+  }
+  res
+}
+
+#' Keep either the selected or the deselected positions
+#'
+#' @param pos `integer`. The positions of every expression, positive where selected and negative where deselected.
+#' @param first The first selection expression.
+#' @return `integer`. The positions of the same sign as the first, which are all positive or all negative.
+#' @noRd
+select_signed <- function(pos, first) {
+  if (is_negation(first)) {
+    pos <- pos[pos < 0L]
+    if (length(pos) == 0L) pos <- seq_len(select_env$get_ncol())
+    return(pos)
+  }
+  if (length(pos) == 0L) return(pos)
+  if (pos[1L] >= 0L) pos[pos >= 0L] else pos[pos < 0L]
+}
+
+#' Add back the grouping variables which a selection leaves out
+#'
+#' The grouping variables go in front of the selection, in the order of the groups.
+#'
+#' @param pos `integer`. The positions selected, either all positive or all negative.
+#' @param cols `list`. The selection expressions.
+#'
+#' @noRd
+select_add_groups <- function(pos, .data, cols) {
+  data_names <- colnames(.data)
+  # A negative selection keeps every other column. Turn it into those positions so that missing grouping variables
+  # can be added back without mixing positive and negative subscripts.
+  if (length(pos) > 0L && pos[1L] < 0L) pos <- setdiff(seq_along(data_names), -pos)
+  groups <- group_vars(.data)
+  readd <- match(groups[!(groups %in% cols)], data_names)
+  readd <- readd[!(readd %in% pos)]
+  if (length(readd) == 0L) return(pos)
+  message("Adding missing grouping variables: `", paste(data_names[readd], collapse = "`, `"), "`")
+  if (length(names(cols)) > 0L) names(readd) <- data_names[readd]
+  c(readd, pos)
+}
+
+eval_expr <- function(x) {
+  type <- typeof(x)
+  switch(
+    type,
+    "integer" = x,
+    "double" = as.integer(x),
+    "character" = select_char(x),
+    "symbol" = select_symbol(x),
+    "language" = eval_call(x),
+    stop("Expressions of type <", typeof(x), "> cannot be evaluated for use when subsetting.")
+  )
+}
+
+select_char <- function(expr) {
+  pos <- match(expr, select_env$get_colnames())
+  if (any(is.na(pos))) stop("The following columns do not exist:\n    ", paste(expr, collapse = "\n    "))
+  pos
+}
+
+select_symbol <- function(expr) {
+  expr_name <- as.character(expr)
+  if (grepl("^is\\.", expr_name) && is.function(expr)) {
+    stop(
+      "Predicate functions must be wrapped in `where()`.\n\n",
+      sprintf("  data %%>%% select(where(%s))", expr_name)
+    )
+  }
+  res <- try(select_char(as.character(expr)), silent = TRUE)
+  if (inherits(res, "try-error")) {
+    res <- tryCatch(
+      unlist(lapply(eval(expr, envir = select_env$calling_frame), eval_expr)),
+      error = function(e) stop("Column ", expr, " does not exist.")
+    )
+  }
+  res
+}
+
+eval_call <- function(x) {
+  type <- as.character(x[[1]])
+  if (length(type) > 1L) {
+    # This helps when pkg::fn is used in a select helper
+    type <- "context"
+  }
+  switch(
+    type,
+    `:` = select_seq(x),
+    `!` = select_negate(x),
+    `-` = select_negate(x),
+    `c` = select_c(x),
+    `(` = select_bracket(x),
+    `&` = select_and(x),
+    select_context(x)
+  )
+}
+
+select_and <- function(expr) {
+  exprs <- as.list(expr)[-1]
+  res <- do.call(c, lapply(exprs, eval_expr))
+  if (all(res > 0) || all(res < 0)) return(unique(res))
+  res <- res[!(duplicated(abs(res)) | duplicated(abs(res), fromLast = TRUE))]
+  res[res > 0]
+}
+
+#' Select a range of columns, `from:to`
+#'
+#' Each end of the range is a selection of its own, so a negated end such as `-mpg` or `!mpg` stands for every other
+#' column, and `:` uses the first of them, with its warning when there are several. As R reads `-mpg:cyl` as
+#' `(-mpg):cyl`, this selects `cyl:cyl`. When both ends are negated with `-`, as in `-mpg:-cyl`, the range itself is
+#' negated, so the columns from `mpg` to `cyl` are dropped.
+#'
+#' @param expr A call to `:`.
+#' @return `integer`. The positions of the range, negative if it is dropped.
+#' @noRd
+select_seq <- function(expr) {
+  from <- expr[[2L]]
+  to <- expr[[3L]]
+  negated <- is_unary(from, "-") && is_unary(to, "-")
+  if (negated) {
+    from <- from[[2L]]
+    to <- to[[2L]]
+  }
+  # The ends are named `x` and `y` so that a warning from `:` reads as it does in a range of numbers
+  x <- select_range_end(from)
+  y <- select_range_end(to)
+  if (negated) -(x:y) else x:y
+}
+
+#' Find the positions an end of a range stands for
+#'
+#' @param expr The unevaluated end of the range.
+#' @return `integer`. The positions it selects; a negated end gives the positions of every other column.
+#' @noRd
+select_range_end <- function(expr) {
+  if (is_unary(expr, "(")) return(select_range_end(expr[[2L]]))
+  if (!is_negation(expr)) return(eval_expr(expr))
+  setdiff(seq_len(select_env$get_ncol()), select_range_end(expr[[2L]]))
+}
+
+select_negate <- function(expr) {
+  eval_expr(expr[[2L]]) * -1L
+}
+
+is_negation <- function(expr) {
+  is_unary(expr, "-") || is_unary(expr, "!")
+}
+
+#' Check whether an expression is a call to the unary operator `op`, e.g. `-x`
+#' @param expr An unevaluated expression.
+#' @param op `character(1)`. The name of the operator.
+#' @return `logical(1)`.
+#' @noRd
+is_unary <- function(expr, op) {
+  is.call(expr) && length(expr) == 2L && identical(expr[[1L]], as.name(op))
+}
+
+select_c <- function(expr) {
+  lst_expr <- as.list(expr)
+  lst_expr[[1]] <- NULL
+  unlist(lapply(lst_expr, eval_expr))
+}
+
+select_bracket <- function(expr) {
+  eval_expr(expr[[2]])
+}
+
+select_context <- function(expr) {
+  res <- eval(expr, envir = select_env$.data, enclos = select_env$helper_frame())
+  if (is.character(res)) select_char(res) else res
+}
+
+# -- Environment ---------------------------------------------------------------
+
+select_env <- new.env()
+# `values`, if given, is a `function(names)` which gives the columns called `names` for `where()` to test, in place of
+# those of `.data`. `across()` uses it to test the full columns while it selects from the data of one group.
+select_env$setup <- function(.data, calling_frame, values = NULL) {
+  select_env$.data <- .data
+  select_env$calling_frame <- calling_frame
+  select_env$values <- values
+}
+select_env$clean <- function() {
+  rm(list = c(".data", "calling_frame", "values"), envir = select_env)
+}
+# Calls are evaluated in the user's environment with the selection helpers masked in on top so that they are found
+# even when poorman is not attached
+select_env$helpers <- c(
+  "starts_with", "ends_with", "contains", "matches", "num_range", "all_of", "any_of", "everything", "last_col",
+  "where", "group_cols"
+)
+select_env$helper_frame <- function() {
+  ns <- environment(select_env$setup)
+  env <- new.env(parent = select_env$calling_frame)
+  for (helper in select_env$helpers) assign(helper, get(helper, envir = ns), envir = env)
+  env
+}
+select_env$get_colnames <- function() colnames(select_env$.data)
+select_env$get_nrow <- function() nrow(select_env$.data)
+select_env$get_ncol <- function() ncol(select_env$.data)
+
+# -- Helpers -------------------------------------------------------------------
+
+#' A cleaner interface to evaluating select_positions when column names are not passed via ...
+#' @noRd
+eval_select_pos <- function(.data, .cols, .group_pos = FALSE, .env = parent.frame(2L), .values = NULL) {
+  do.call(select_positions, list(.data = .data, .cols, .group_pos = .group_pos, .env = .env, .values = .values))
+}

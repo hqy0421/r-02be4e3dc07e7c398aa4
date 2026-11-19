@@ -1,0 +1,117 @@
+template:
+  bootstrap: 5
+  theme: github-light
+  bslib:
+    primary: "#EF60A3"
+    code_font: {google: "Fira Code"}
+
+news:
+  releases:
+  - text: "Version 0.1.9"
+    href: https://nathaneastwood.github.io/2020/04/01/poorman-first-release-of-a-base-r-dplyr-clone/
+  - text: "Version 0.1.10"
+    href: https://nathaneastwood.github.io/2020/04/13/poorman-select-helpers-bug-fixes-and-tests-tests-tests/
+  - text: "Version 0.2.0"
+    href: https://nathaneastwood.github.io/2020/05/17/poorman-the-selectificator-2000/
+  - text: "Version 0.2.1"
+    href: https://nathaneastwood.github.io/2020/07/01/poorman-version-0.2.1-release/
+  - text: "Version 0.2.2 and 0.2.3"
+    href: https://nathaneastwood.github.io/2020/11/14/poorman-versions-0.2.2-and-0.2.3-releases/
+  - text: "Version 0.2.5"
+    href: https://nathaneastwood.github.io/2021/03/29/poorman-version-0.2.5-release/
+
+reference:
+- title: One table verbs
+  contents:
+  - arrange
+  - count
+  - distinct
+  - fill
+  - filter
+  - mutate
+  - pull
+  - relocate
+  - rename
+  - select
+  - summarise
+  - slice
+  - unite
+
+- title: Two table verbs
+  contents:
+  - bind
+  - filter_joins
+  - mutate_joins
+  - nest_join
+  - union_all
+
+- title: Pivoting
+  contents:
+  - pivot_longer
+  - pivot_wider
+
+- title: Grouping
+  contents:
+  - group_by
+  - group_by_drop_default
+  - group_metadata
+  - group_split
+  - context
+  - nest_by
+  - with_groups
+
+- title: Vector functions
+  contents:
+  - across
+  - between
+  - case_when
+  - coalesce
+  - cummean
+  - desc
+  - if_else
+  - lag
+  - n_distinct
+  - na_if
+  - near
+  - nth
+  - recode
+  - replace_na
+  - window_rank
+
+- title: Selection helpers
+  contents:
+  - group_cols
+  - peek_vars
+  - select_helpers
+  - where
+
+- title: Piping
+  contents:
+  - pipe
+
+- title: data.frame Display
+  contents:
+  - glimpse
+
+- title: data.frame Attributes
+  contents:
+  - rownames
+
+- title: Utilities
+  contents:
+  - lst
+
+navbar:
+  left:
+    - icon: fa-home
+      href: index.html
+    - icon: fa-newspaper-o
+      text: "News"
+      href: news/index.html
+    - icon: fa-file-code-o
+      text: "Functions"
+      href: reference/index.html
+
+authors:
+  Nathan Eastwood:
+    href: https://nathaneastwood.github.io
