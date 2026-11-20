@@ -1,3 +1,10 @@
+# poorman (development version)
+
+## New features
+
+* New `bom_explode()` explodes order lines through a multi-level, acyclic bill of materials down to the leaf parts, giving the true demand of every order for every leaf part. Sub-assemblies shared by orders are exploded once per order, duplicated parent-child usage lines and multiple paths to a leaf all contribute, and cycles or unknown parts are errors.
+* New `mrp_plan()` consumes the order x leaf detail with poorman's native joins and grouping to give the gross material cost of every order, the gross demand of every leaf part, non-negative net purchase quantities and remaining inventory after deducting the global inventory of each leaf part exactly once, and a purchasing report per supplier. Zero-quantity orders and unused leaf parts are kept, and invalid quantities, overflow and other failures deliver no result.
+
 # poorman 0.3.1
 
 ## Improvements

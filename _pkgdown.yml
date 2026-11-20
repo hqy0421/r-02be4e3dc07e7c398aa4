@@ -50,6 +50,11 @@ reference:
   - pivot_longer
   - pivot_wider
 
+- title: Material requirements planning
+  contents:
+  - bom_explode
+  - mrp_plan
+
 - title: Grouping
   contents:
   - group_by
